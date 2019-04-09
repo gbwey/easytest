@@ -3,19 +3,19 @@
 {-# Language NamedFieldPuns #-}
 {-# Language OverloadedStrings #-}
 {-# Language ScopedTypeVariables #-}
-
+{-# Language TupleSections #-}
 module EasyTest where
 
 import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Exception
+import Control.Arrow
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.List (isPrefixOf)
 import Data.Map (Map)
-import Data.Semigroup ((<>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -26,6 +26,7 @@ import System.Random (Random)
 import qualified Control.Concurrent.Async as A
 import qualified Data.Map as Map
 import qualified System.Random as Random
+import Data.Either
 
 data Status = Failed | Passed !Int | Skipped
 
@@ -38,10 +39,10 @@ combineStatus (Passed n) (Passed m) = Passed (n + m)
 
 data Env =
   Env { rng :: TVar Random.StdGen
-      , messages :: [Text]
+      , messages :: ![Text]
       , results :: TBQueue (Maybe (TMVar ([Text], Status)))
       , note_ :: Text -> IO ()
-      , allow :: [Text] }
+      , allow :: ![Text] }
 
 newtype Test a = Test (ReaderT Env IO (Maybe a))
 
@@ -60,17 +61,34 @@ expect :: HasCallStack => Bool -> Test ()
 expect False = crash "unexpected"
 expect True = ok
 
+expectNot :: HasCallStack => Bool -> Test ()
+expectNot True = crash "unexpected"
+expectNot False = ok
+
 expectJust :: HasCallStack => Maybe a -> Test a
 expectJust Nothing = crash "expected Just, got Nothing"
 expectJust (Just a) = ok >> pure a
 
-expectRight :: HasCallStack => Either e a -> Test a
-expectRight (Left _) = crash "expected Right, got Left"
+expectRight :: (Show e, HasCallStack) => Either e a -> Test a
+expectRight (Left e) = crash $ "expected Right, got Left " <> T.pack (show e)
 expectRight (Right a) = ok >> pure a
+
+expectLeft :: (Show a, HasCallStack) => Either e a -> Test e
+expectLeft (Left e) = ok >> pure e
+expectLeft (Right a) = crash $ "expected Left, got Right " <> T.pack (show a)
 
 expectEq :: (Eq a, Show a, HasCallStack) => a -> a -> Test ()
 expectEq x y = if x == y then ok else crash $
   "expected to be equal: (" <> show' x <> "), (" <> show' y <> ")"
+
+expectAll :: (Eq a, Show a, HasCallStack, Show b) => (a -> Either b ()) -> [a] -> Test ()
+expectAll p as = case lefts (map (\a -> left (a,) (p a)) as) of
+                   [] -> ok
+                   xs@(_:_) -> crash $ "expected all to succeed but " <> T.pack (show (length xs)) <> " failed " <> T.pack (show xs)
+
+liftMaybe :: Eq a => a -> a -> Either (a,a) ()
+liftMaybe expected actual | expected == actual = Right ()
+                          | otherwise = Left (expected, actual)
 
 tests :: [Test ()] -> Test ()
 tests = msum
@@ -140,11 +158,11 @@ run' seed note allow (Test t) = do
       note line
       case succeeded of
         0 -> do
-          note "😶  hmm ... no test results recorded"
+          note "?  hmm ... no test results recorded"
           note "Tip: use `ok`, `expect`, or `crash` to record results"
           note "Tip: if running via `runOnly` or `rerunOnly`, check for typos"
-        1 -> note   "✅  1 test passed, no failures! 👍 🎉"
-        _ -> note $ "✅  " <> show' succeeded <> " tests passed, no failures! 👍 🎉"
+        1 -> note   "?  1 test passed, no failures! ? ?"
+        _ -> note $ "?  " <> show' succeeded <> " tests passed, no failures! ? ?"
     (hd:_) -> do
       note line
       note "\n"
@@ -157,7 +175,7 @@ run' seed note allow (Test t) = do
       note $ "    EasyTest.rerunOnly " <> show' seed <> " " <> "\"" <> hd <> "\""
       note "\n"
       note line
-      note "❌"
+      note "?"
       exitWith (ExitFailure 1)
 
 -- | Label a test. Can be nested. A `'.'` is placed between nested
@@ -362,7 +380,7 @@ instance MonadReader Env Test where
   ask = Test $ do
     allowed <- asks actionAllowed
     if allowed
-      then Just <$> ask
+      then asks Just
       else pure Nothing
   local f (Test t) = Test (local f t)
   reader f = Test (Just <$> reader f)
