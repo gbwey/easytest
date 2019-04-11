@@ -1,3 +1,4 @@
+{-# Options -Wall #-}
 {-# Language BangPatterns #-}
 {-# Language MultiParamTypeClasses #-}
 {-# Language NamedFieldPuns #-}
@@ -85,6 +86,9 @@ expectAll :: (Eq a, Show a, HasCallStack, Show b) => (a -> Either b ()) -> [a] -
 expectAll p as = case lefts (map (\a -> left (a,) (p a)) as) of
                    [] -> ok
                    xs@(_:_) -> crash $ "expected all to succeed but " <> T.pack (show (length xs)) <> " failed " <> T.pack (show xs)
+
+expectAll' :: (Show a, Show a1, Eq a, Eq a1) => a1 -> (a -> a1) -> [a] -> Test ()
+expectAll' w p = expectAll (liftMaybe w . p)
 
 liftMaybe :: Eq a => a -> a -> Either (a,a) ()
 liftMaybe expected actual | expected == actual = Right ()
