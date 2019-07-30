@@ -28,7 +28,7 @@ import qualified Control.Concurrent.Async as A
 import qualified Data.Map as Map
 import qualified System.Random as Random
 import Data.Either
-import Control.Monad.Fail
+import qualified Control.Monad.Fail as Fail
 
 data Status = Failed | Passed !Int | Skipped
 
@@ -403,7 +403,7 @@ instance Monad Test where
       Nothing -> pure Nothing
       Just a'' -> let Test t = f a'' in t
 
-instance MonadFail Test where
+instance Fail.MonadFail Test where
   fail = crash . T.pack
 
 instance Functor Test where
