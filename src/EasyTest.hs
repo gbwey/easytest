@@ -29,6 +29,7 @@ import qualified Data.Map as Map
 import qualified System.Random as Random
 import Data.Either
 import qualified Control.Monad.Fail as Fail
+import qualified Test.QuickCheck as Q
 
 data Status = Failed | Passed !Int | Skipped
 
@@ -62,6 +63,13 @@ atomicLogger = do
 expect :: HasCallStack => Bool -> Test ()
 expect False = crash "unexpected"
 expect True = ok
+
+prop :: (Q.Testable prop, HasCallStack) => prop -> Test ()
+prop p = do
+ r <- io $ Q.quickCheckResult p
+ case r of
+   Q.Success {} -> ok
+   _ -> crash $ T.pack $ show r
 
 expectNot :: HasCallStack => Bool -> Test ()
 expectNot True = crash "unexpected"

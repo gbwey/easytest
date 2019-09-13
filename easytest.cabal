@@ -45,7 +45,8 @@ library
     ,stm                       
     ,random                    
     ,text                      
-
+    ,QuickCheck
+    
   ghc-options: -Wall -fno-warn-name-shadowing
 
   if flag(optimized)
