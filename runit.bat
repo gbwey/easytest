@@ -1,1 +1,1 @@
-call stack build
+call stack build --test --fast
