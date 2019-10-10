@@ -15,7 +15,7 @@ import Control.Arrow
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, isInfixOf)
 import Data.Map (Map)
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -29,6 +29,7 @@ import qualified Data.Map as Map
 import qualified System.Random as Random
 import Data.Either
 import qualified Control.Monad.Fail as Fail
+import qualified Test.QuickCheck as Q
 
 data Status = Failed | Passed !Int | Skipped
 
@@ -63,6 +64,13 @@ expect :: HasCallStack => Bool -> Test ()
 expect False = crash "unexpected"
 expect True = ok
 
+prop :: (Q.Testable prop, HasCallStack) => prop -> Test ()
+prop p = do
+ r <- io $ Q.quickCheckResult p
+ case r of
+   Q.Success {} -> ok
+   _ -> crash $ T.pack $ show r
+
 expectNot :: HasCallStack => Bool -> Test ()
 expectNot True = crash "unexpected"
 expectNot False = ok
@@ -90,6 +98,24 @@ expectAll p as = case lefts (map (\a -> left (a,) (p a)) as) of
 
 expectAll' :: (Show a, Show a1, Eq a, Eq a1) => a1 -> (a -> a1) -> [a] -> Test ()
 expectAll' w p = expectAll (liftMaybe w . p)
+
+expectIO' :: HasCallStack => IO Bool -> Test ()
+expectIO' iob = do
+  b <- io iob
+  if b then ok else crash "expectIO' failed"
+
+expectIO :: (HasCallStack, Show a) => IO (Either String a) -> (Either String a -> Either String ()) -> Test ()
+expectIO iolr p = do
+  lr <- io iolr
+  case p lr of
+    Left e -> crash $ "expectIO: " <> T.pack e <> " lr=" <> T.pack (show lr)
+    Right () -> ok
+
+expectLeftWith :: Show a => String -> Either String a -> Either String ()
+expectLeftWith _ (Right a) = Left $ "expected fail but was actually successful " ++ show a
+expectLeftWith n (Left s)
+  | n `isInfixOf` s = Right ()
+  | otherwise = Left $ "found fail but infix string did not match: actual[" ++ s ++ "] infix[" ++ n ++ "]"
 
 liftMaybe :: Eq a => a -> a -> Either (a,a) ()
 liftMaybe expected actual | expected == actual = Right ()
